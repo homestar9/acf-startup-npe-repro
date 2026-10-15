@@ -1,0 +1,25 @@
+{
+    "name":"acf-startup-npe-2025",
+    "openBrowser":false,
+    "web":{
+        "webroot":"app",
+        "HTTP":{
+            "port":61250
+        }
+    },
+    "app":{
+        "serverHomeDirectory":".engine/acf2025",
+        "cfengine":"adobe@2025.0.13+331960"
+    },
+    "fusionreactor":{
+        "enable":false
+    },
+    "jvm":{
+        "javaVersion":"openjdk21_jdk",
+        "heapSize":"1024",
+        "minHeapSize":"1024",
+        "args":[
+            "-XX:-OmitStackTraceInFastThrow"
+        ]
+    }
+}

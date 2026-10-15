@@ -1,0 +1,15 @@
+# ColdFusion engines installed by CommandBox
+.engine/
+
+# Components written by each run of index.cfm
+app/gen/
+
+# Fix build output and downloaded ASM jars (the fix jar contains an Adobe class: never commit it)
+fix/build/
+fix/tools/
+*.jar
+*.class
+
+# Local notes
+plans/
+private/

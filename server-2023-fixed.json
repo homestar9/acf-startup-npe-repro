@@ -1,0 +1,25 @@
+{
+    "name":"acf-startup-npe-2023-fixed",
+    "openBrowser":false,
+    "web":{
+        "webroot":"app",
+        "HTTP":{
+            "port":61231
+        }
+    },
+    "app":{
+        "serverHomeDirectory":".engine/acf2023-fixed",
+        "cfengine":"adobe@2023.0.25+330977"
+    },
+    "fusionreactor":{
+        "enable":false
+    },
+    "jvm":{
+        "javaVersion":"openjdk17_jdk",
+        "heapSize":"1024",
+        "minHeapSize":"1024",
+        "args":[
+            "-XX:-OmitStackTraceInFastThrow"
+        ]
+    }
+}
