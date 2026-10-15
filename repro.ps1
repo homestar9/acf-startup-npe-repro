@@ -44,7 +44,10 @@ function Stop-Server( $s ) {
 
 function Start-Server( $s ) {
 	Push-Location $root
-	try { box server start "serverConfigFile=$($s.Config)" | Out-Null }
+	try {
+		$out = box server start "serverConfigFile=$($s.Config)" 2>&1
+		if ( $LASTEXITCODE -ne 0 ) { throw "$($s.Name): box server start failed:`n$( $out -join "`n" )" }
+	}
 	finally { Pop-Location }
 	for ( $i = 0; $i -lt 180; $i++ ) {
 		try {
