@@ -25,8 +25,9 @@ java.lang.NullPointerException: Cannot invoke "coldfusion.util.Key.getKeyString(
 
 Often alongside: `Element NAME is undefined in PROP.` (a key lost from the same corrupted map).
 
-Verified on **ColdFusion 2023 Update 25** (2023.0.25.330977, Java 17) and **ColdFusion 2025
-Update 13** (2025.0.13.331960, Java 21), both run with CommandBox. No framework, no database.
+Verified on **ColdFusion 2023 Updates 25 and 26** (Java 17) and **ColdFusion 2025 Updates 13
+and 14** (Java 21), the latest updates as of 2026-10-16, all run with CommandBox. No framework,
+no database.
 
 This is separate from the scope-contamination case
 ([homestar9/adobe-scope-contamination](https://github.com/homestar9/adobe-scope-contamination));
@@ -53,6 +54,10 @@ result:        FAIL
 ```
 
 For 2025, use `server-2025.json` and port 61250. Add `?trace=1` to print the full Java stack.
+
+These configs install 2023 Update 25 and 2025 Update 13, because CommandBox does not offer
+Update 26 or Update 14 yet. The classes involved are the same in both (see
+[Results](#results)).
 
 ### On a normal ColdFusion install (no CommandBox)
 
@@ -97,19 +102,35 @@ Other modes, for comparison:
 | `index.cfm?mode=write` | only the writes, no `duplicate()` during the burst | FAIL (the writes alone corrupt the map) |
 | `index.cfm?mode=struct` | the same writes into ordinary CFML structs of the same shape | PASS, every time |
 
-## Results (measured 2026-10-14)
+## Results
 
 `repro.ps1 -FreshStart` restarts the server (new JVM) before every run.
 
-| Server | Fresh starts | Runs that failed | Components left permanently broken |
-|---|---|---|---|
-| 2023 Update 25 | 10 | **10** | **62 of 100** |
-| 2023 Update 25 + fix | 10 | 0 | 0 of 100 |
-| 2025 Update 13 | 10 | **10** | **63 of 100** |
-| 2025 Update 13 + fix | 10 | 0 | 0 of 100 |
+| Server | Measured | Fresh starts | Runs that failed | Components left permanently broken |
+|---|---|---|---|---|
+| 2023 Update 26 | 2026-10-16 | 10 | **10** | **53 of 100** |
+| 2023 Update 26 + fix | 2026-10-16 | 10 | 0 | 0 of 100 |
+| 2025 Update 14 | 2026-10-16 | 10 | **10** | **60 of 100** |
+| 2025 Update 14 + fix | 2026-10-16 | 10 | 0 | 0 of 100 |
+| 2023 Update 25 | 2026-10-14 | 10 | **10** | **62 of 100** |
+| 2023 Update 25 + fix | 2026-10-14 | 10 | 0 | 0 of 100 |
+| 2025 Update 13 | 2026-10-14 | 10 | **10** | **63 of 100** |
+| 2025 Update 13 + fix | 2026-10-14 | 10 | 0 | 0 of 100 |
 
-On servers that had already run for a while (no restart between runs), 10 runs each: stock 2023
-failed 2 of 10 and 2025 failed 2 of 10; both fixed servers passed 10 of 10.
+On servers that had already run for a while (no restart between runs), 10 runs each on Update
+25 and Update 13: stock 2023 failed 2 of 10 and 2025 failed 2 of 10; both fixed servers passed
+10 of 10.
+
+How Update 26 and Update 14 were tested: CommandBox does not offer them yet, so we took the
+update jars from Adobe (`hotfix-026-331018.jar` and `hotfix-014-332029.jar`, MD5 as published)
+and put the core update jar inside each (`chf20230026.jar`, `chf20250014.jar`) in place of the
+previous one in `lib/updates`. The servers then report builds 331018 and 332029. The update
+number in `server.coldfusion.productVersion` still shows 25 and 13, because Adobe's full installer,
+which also records the update level, was not run.
+
+The classes involved did not change. 2023 Update 26 does not replace `CaseInsensitiveMap`,
+`AttributeCollection` or `ObjectDuplicator`. 2025 Update 14 ships its own `CaseInsensitiveMap` and
+`ObjectDuplicator`, byte-for-byte identical to Update 13's.
 
 ## What happens
 
@@ -180,8 +201,8 @@ A narrower change would also cover this case: have `AttributeCollection`'s const
 ### Build and try the fix
 
 The repository holds no Adobe code. `fix/build-fix.ps1` reads `CaseInsensitiveMap.class` from
-your installed engine (from the cumulative update jar when it ships its own copy, as 2025 Update 13
-does; otherwise from `cfusion.jar`), patches it with [ASM](https://asm.ow2.io/) 9.7 (downloaded
+your installed engine (from the cumulative update jar when it ships its own copy, as 2025 Updates 13
+and 14 do; otherwise from `cfusion.jar`), patches it with [ASM](https://asm.ow2.io/) 9.7 (downloaded
 from Maven Central and hash-checked), checks the two constructors, and drops the one-class jar into
 that server's `lib/updates` folder as `hf202300-00001-casemap-fix.jar` (or `hf202500-...`).
 

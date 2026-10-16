@@ -32,7 +32,7 @@ $updatesDir = Join-Path $libDir 'updates'
 
 # The class must be patched from the copy the server really loads. ColdFusion loads the newest
 # cumulative update jar (chf<version><update>.jar) ahead of cfusion.jar, and some updates ship
-# their own CaseInsensitiveMap (2025 Update 13 does; 2023 Update 25 does not).
+# their own CaseInsensitiveMap (2025 Updates 13 and 14 do; 2023 Updates 25 and 26 do not).
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $chf = Get-ChildItem $updatesDir -Filter 'chf*.jar' -ErrorAction SilentlyContinue |
 	Where-Object { $_.Name -match '^chf(\d{4})(\d+)\.jar$' } |
