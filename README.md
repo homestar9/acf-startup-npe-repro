@@ -54,6 +54,21 @@ result:        FAIL
 
 For 2025, use `server-2025.json` and port 61250. Add `?trace=1` to print the full Java stack.
 
+### On a normal ColdFusion install (no CommandBox)
+
+1. Download this repository as a ZIP (green **Code** button > **Download ZIP**) and unzip it.
+2. Copy the `app` folder into your ColdFusion web root and rename it `npe-repro`
+   (for example `C:\ColdFusion2023\cfusion\wwwroot\npe-repro`).
+3. Restart the ColdFusion service.
+4. Open <http://localhost:8500/npe-repro/index.cfm> once (use your server's port if it is not
+   8500). You should see `result: FAIL`, with output like the example above.
+
+The page needs no database, no datasource and no Administrator settings. It writes its test
+components into `npe-repro/gen`, so ColdFusion needs write access to that folder.
+
+If you open the page without restarting first, reload it up to 10 times: on a server that has
+been running for a while, about one reload in five fails.
+
 The page writes 10 brand-new components (so their metadata is untouched, as after a restart),
 then starts 10 threads together. For each component, every thread does what an ORM does on first
 use:
