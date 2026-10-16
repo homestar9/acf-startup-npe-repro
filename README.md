@@ -10,6 +10,9 @@ In production this shows up right after a restart: the first burst of traffic co
 metadata and the site returns HTTP 500 on every page that uses those components until the next
 restart.
 
+To protect your servers until Adobe fixes it, see
+[Fix your own servers](#fix-your-own-servers-until-adobe-ships-a-fix).
+
 ```
 java.lang.NullPointerException: Cannot invoke "coldfusion.util.Key.getKeyString()" because "this.key" is null
 	at coldfusion.util.CaseInsensitiveMap$ScopeIterator$ScopeEntry.getKey(CaseInsensitiveMap.java:482)
@@ -198,7 +201,88 @@ version. That is not a full benchmark.
 A narrower change would also cover this case: have `AttributeCollection`'s constructors call
 `CaseInsensitiveMap(true, capacity)`. We have not tested that one.
 
-### Build and try the fix
+## Fix your own servers (until Adobe ships a fix)
+
+This is an unofficial change to one ColdFusion class, made by us, not Adobe. Try it on a test
+server before production. It passed every test in this repository on 2023 Updates 25 and 26 and
+2025 Updates 13 and 14, and we did not see any slowdown, but it has not been through Adobe's own
+testing.
+
+What you need:
+
+- Windows and PowerShell (on Linux, use the manual steps at the end of this section).
+- A Java JDK 11 or newer. The script uses `JAVA_HOME`, or ColdFusion's own `jre` folder if it
+  is a full JDK, or a JDK installed by CommandBox. If it says no JDK was found, install one (for
+  example [Eclipse Temurin 17](https://adoptium.net/)) and set `JAVA_HOME` to it.
+- Internet access, the first time. The script downloads a small Java library
+  ([ASM](https://asm.ow2.io/)) from Maven Central and checks its fingerprint.
+
+### On a normal ColdFusion install
+
+1. Download this repository as a ZIP (green **Code** button > **Download ZIP**) and unzip it, for
+   example to `C:\npe-fix`.
+2. Stop the ColdFusion service.
+3. Open PowerShell **as Administrator** and run (change the path to match your install):
+
+   ```
+   cd C:\npe-fix\acf-startup-npe-repro-main
+   powershell -ExecutionPolicy Bypass -File .\fix\build-fix.ps1 -ServerHome C:\ColdFusion2023\cfusion
+   ```
+
+   The last lines should say `Installed hf202300-00001-casemap-fix.jar into ...`. If you see
+   anything else, nothing was installed and your server is unchanged.
+4. Start the ColdFusion service.
+5. To check it worked, copy `app\build-info.cfm` into your web root, open it in a browser and
+   look for `fix installed: yes`. Then delete that file.
+
+If you run more than one ColdFusion instance, do steps 3 and 4 for each one: use the instance's
+folder (for example `C:\ColdFusion2023\instance2`) as `-ServerHome`.
+
+### On CommandBox
+
+1. Stop the server: `box server stop`
+2. Find its folder: `box server info property=serverHomeDirectory`
+3. Run the script with that folder, as in step 3 above:
+   `powershell -ExecutionPolicy Bypass -File .\fix\build-fix.ps1 -ServerHome <that folder>`
+4. Start the server: `box server start`
+
+If CommandBox reinstalls the engine (for example after `box server forget`, or when servers are
+built fresh from a Docker image), the fix is gone and you need to add it again.
+
+### After every ColdFusion update
+
+Stop ColdFusion, run the script again, start ColdFusion.
+
+This matters. The fix is a copy of one class from the update you have now, and ColdFusion loads
+it ahead of Adobe's own. If a later update changes that class, an old fix would hide Adobe's
+change. Running the script again rebuilds the fix from the new update and replaces the old jar.
+Afterwards, check that `hf...-casemap-fix.jar` is still in `cfusion\lib\updates`.
+
+### To remove it
+
+Stop ColdFusion, delete `hf202300-00001-casemap-fix.jar` (or `hf202500-...`) from
+`cfusion\lib\updates`, start ColdFusion. Do this once Adobe ships its own fix.
+
+### On Linux, or without PowerShell
+
+The same steps by hand, with a JDK 11 or newer and
+[asm-9.7.jar](https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar) and
+[asm-tree-9.7.jar](https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.7/asm-tree-9.7.jar)
+in the current folder:
+
+```
+javac -cp asm-9.7.jar:asm-tree-9.7.jar -d build fix/PatchCaseInsensitiveMap.java
+java  -cp asm-9.7.jar:asm-tree-9.7.jar:build PatchCaseInsensitiveMap <source jar> hf202300-00001-casemap-fix.jar
+# stop ColdFusion, copy the jar into <cfusion>/lib/updates, start ColdFusion
+```
+
+`<source jar>` is the jar your server loads the class from: the newest
+`<cfusion>/lib/updates/chf*.jar` if it contains the class, otherwise `<cfusion>/lib/cfusion.jar`.
+To check, run `unzip -l <newest chf jar> coldfusion/util/CaseInsensitiveMap.class`. Today that
+means `cfusion.jar` on 2023 and the `chf2025...jar` on 2025. On 2025, name the output
+`hf202500-00001-casemap-fix.jar`.
+
+### Build and try the fix on the test servers
 
 The repository holds no Adobe code. `fix/build-fix.ps1` reads `CaseInsensitiveMap.class` from
 your installed engine (from the cumulative update jar when it ships its own copy, as 2025 Updates 13
@@ -220,14 +304,6 @@ the jar and restart.
 
 `.\repro.ps1 -Setup` does all of this for the four servers; `.\repro.ps1 -FreshStart` then
 produces the results table above.
-
-Without PowerShell, the same steps by hand (JDK 11 or newer):
-
-```
-javac -cp asm-9.7.jar:asm-tree-9.7.jar -d build fix/PatchCaseInsensitiveMap.java
-java  -cp asm-9.7.jar:asm-tree-9.7.jar:build PatchCaseInsensitiveMap <path>/cfusion.jar hf202300-00001-casemap-fix.jar
-# copy the jar into <cfusion>/lib/updates and restart
-```
 
 ## Files
 

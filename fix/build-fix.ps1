@@ -4,12 +4,13 @@
 	jar is made on your machine from the engine you already have.
 
 	  .\fix\build-fix.ps1 -ServerHome .engine\acf2023-fixed
-	  .\fix\build-fix.ps1 -ServerHome C:\ColdFusion2023\cfusion\..   (a standard install's root that holds WEB-INF or cfusion\lib)
+	  .\fix\build-fix.ps1 -ServerHome C:\ColdFusion2023\cfusion   (a normal install: the instance folder that holds lib)
 
 	Stop the server first and start it again afterwards: a jar copied into a running server is
 	not picked up.
 
-	Needs a JDK (javac). It uses JAVA_HOME if set, otherwise the newest CommandBox JDK.
+	Needs a JDK (javac). It uses JAVA_HOME if set, then the JDK ColdFusion runs on if it is one,
+	then the newest CommandBox JDK.
 #>
 param(
 	[Parameter( Mandatory )] [string] $ServerHome,
@@ -54,11 +55,18 @@ Get-ChildItem $updatesDir -Filter '*casemap-fix*.jar' -ErrorAction SilentlyConti
 
 # ---------------------------------------------------------------- a JDK
 if ( -not $JavaHome -or -not ( Test-Path ( Join-Path $JavaHome 'bin\javac.exe' ) ) ) {
+	# A normal install keeps its Java in <install root>\jre, next to the cfusion folder.
+	$JavaHome = @( ( Join-Path $ServerHome 'jre' ), ( Join-Path $ServerHome '..\jre' ) ) |
+		Where-Object { Test-Path ( Join-Path $_ 'bin\javac.exe' ) } |
+		Select-Object -First 1
+}
+if ( -not $JavaHome ) {
 	$JavaHome = Get-ChildItem ( Join-Path $env:USERPROFILE '.CommandBox\serverJREs' ) -Directory -ErrorAction SilentlyContinue |
 		Where-Object { Test-Path ( Join-Path $_.FullName 'bin\javac.exe' ) } |
 		Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName
 }
-if ( -not $JavaHome ) { throw 'No JDK found. Set JAVA_HOME to a JDK 11 or newer.' }
+if ( -not $JavaHome ) { throw 'No JDK found. Install a JDK 11 or newer (for example Eclipse Temurin 17) and set JAVA_HOME to it.' }
+Write-Host "Using the JDK in $JavaHome"
 $javac = Join-Path $JavaHome 'bin\javac.exe'
 $java  = Join-Path $JavaHome 'bin\java.exe'
 $javap = Join-Path $JavaHome 'bin\javap.exe'
