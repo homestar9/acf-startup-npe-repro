@@ -9,7 +9,7 @@
     },
     "app":{
         "serverHomeDirectory":".engine/acf2023",
-        "cfengine":"adobe@2023.0.25+330977"
+        "cfengine":"adobe@2023.0.26+331018"
     },
     "fusionreactor":{
         "enable":false
