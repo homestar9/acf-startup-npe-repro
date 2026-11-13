@@ -10,8 +10,11 @@ In production this shows up right after a restart: the first burst of traffic co
 metadata and the site returns HTTP 500 on every page that uses those components until the next
 restart.
 
-To protect your servers until Adobe fixes it, see
-[Fix your own servers](#fix-your-own-servers-until-adobe-ships-a-fix).
+> **Our fix is withdrawn (2026-11-13). If you installed it, remove it.** Adobe has confirmed
+> this as a ColdFusion bug (CF-4234842) and is fixing it. Our fix stops the crash but has side
+> effects: for example, `structCopy()` of component metadata changes the original. Remove it
+> before you install the ColdFusion update that fixes this bug, or ColdFusion may not start.
+> See [Remove our fix](#remove-our-fix) and [why it was withdrawn](#our-fix-withdrawn).
 
 ```
 java.lang.NullPointerException: Cannot invoke "coldfusion.util.Key.getKeyString()" because "this.key" is null
@@ -112,13 +115,13 @@ Other modes, for comparison:
 | Server | Measured | Fresh starts | Runs that failed | Components left permanently broken |
 |---|---|---|---|---|
 | 2023 Update 26 | 2026-10-16 | 10 | **10** | **53 of 100** |
-| 2023 Update 26 + fix | 2026-10-16 | 10 | 0 | 0 of 100 |
+| 2023 Update 26 + our fix | 2026-10-16 | 10 | 0 | 0 of 100 |
 | 2025 Update 14 | 2026-10-16 | 10 | **10** | **60 of 100** |
-| 2025 Update 14 + fix | 2026-10-16 | 10 | 0 | 0 of 100 |
+| 2025 Update 14 + our fix | 2026-10-16 | 10 | 0 | 0 of 100 |
 | 2023 Update 25 | 2026-10-14 | 10 | **10** | **62 of 100** |
-| 2023 Update 25 + fix | 2026-10-14 | 10 | 0 | 0 of 100 |
+| 2023 Update 25 + our fix | 2026-10-14 | 10 | 0 | 0 of 100 |
 | 2025 Update 13 | 2026-10-14 | 10 | **10** | **63 of 100** |
-| 2025 Update 13 + fix | 2026-10-14 | 10 | 0 | 0 of 100 |
+| 2025 Update 13 + our fix | 2026-10-14 | 10 | 0 | 0 of 100 |
 
 On servers that had already run for a while (no restart between runs), 10 runs each on Update
 25 and Update 13: stock 2023 failed 2 of 10 and 2025 failed 2 of 10; both fixed servers passed
@@ -169,9 +172,11 @@ The engine also writes into these maps after handing them out. For example,
 make those alone corrupt a map, but they show the maps are written after other requests can see
 them.
 
-## The fix
+## Our fix (withdrawn)
 
-In `coldfusion.util.CaseInsensitiveMap`, the two default constructors create their map with the
+**Withdrawn on 2026-11-13. Do not install it. If you did, [remove it](#remove-our-fix).**
+
+Our fix changed the two default constructors of `coldfusion.util.CaseInsensitiveMap` to use the
 class's own concurrent map instead of `HashMap`:
 
 ```java
@@ -179,142 +184,60 @@ public CaseInsensitiveMap()             { this.map = new CFConcurrentHashMap(); 
 public CaseInsensitiveMap(int capacity) { this.map = new CFConcurrentHashMap(capacity); } // was: new HashMap(capacity)
 ```
 
-That is the whole change: four bytecode instructions (two `new`, two constructor calls) in one
-class. Nothing else in the class or the engine changes.
+It stops the crash (see [Results](#results)), but it changes every map built with those two
+constructors, which Adobe counts at about 150 places in the engine. Adobe's testing found three
+side effects, and we confirmed all three on 2023 Update 26 and 2025 Update 14:
 
-Why it is safe:
+- `structCopy()` of a property, function or component metadata struct returns a copy that shares
+  its data with the original. Changing the copy changes that component's metadata for every
+  request until restart, and nothing reports an error.
+- In a metadata struct that holds a null value, ColdFusion's internal stand-in for null shows up
+  in its output (`java.lang.Object@...`).
+- `objectSave()` of such a struct fails with `NotSerializableException`.
 
-- `CaseInsensitiveMap$CFConcurrentHashMap` already ships in the class. It is the null-safe
-  `ConcurrentHashMap` (nulls go through `NULL_PILL`) that the `concurrent=true` constructors
-  use, so it is what every ordinary CFML struct already runs on.
-- The `map` field is typed `java.util.Map`, so no field or method signature changes, and
-  serialization is unaffected.
-- A `ConcurrentHashMap` cannot be corrupted by concurrent writes, and its `toArray()` copes with
-  a size that changes during the copy.
+Adobe is fixing the bug in the engine with a narrower change, limited to metadata and tag
+attribute structs (`coldfusion.runtime.AttributeCollection`).
 
-What it touches: every map built with those two constructors, not only metadata (for example tag
-attribute collections and some engine-internal maps). A rough single-threaded check (`speed.cfm`:
-creating 20,000 components with accessors, `getMetadata()`, tag calls, struct building and
-`duplicate()`, `serializeJSON`) showed no measurable difference between stock and fixed on either
-version. That is not a full benchmark.
+The code stays in this repository so the results above can be checked. `fix/build-fix.ps1`
+builds the fix from a server's own engine jar with [ASM](https://asm.ow2.io/) and drops it into
+that server's `lib/updates` folder; `.\repro.ps1 -Setup` does that for the two `-fixed` test
+servers (ports 61231 and 61251), and `.\repro.ps1 -FreshStart` produces the results table. Use it
+only on those test servers.
 
-A narrower change would also cover this case: have `AttributeCollection`'s constructors call
-`CaseInsensitiveMap(true, capacity)`. We have not tested that one.
+## Remove our fix
 
-## Fix your own servers (until Adobe ships a fix)
+If you followed an earlier version of this README, remove the fix from every ColdFusion instance
+you installed it on. Do it before you install the ColdFusion update that fixes this bug: with
+Adobe's fix and ours both installed, ColdFusion did not start in our tests, and its log showed a
+`java.lang.NoSuchMethodError` that mentions `CaseInsensitiveMap.nonNullKeys`. Removing our jar
+fixes that too.
 
-This is an unofficial change to one ColdFusion class, made by us, not Adobe. Try it on a test
-server before production. It passed every test in this repository on 2023 Updates 25 and 26 and
-2025 Updates 13 and 14, and we did not see any slowdown, but it has not been through Adobe's own
-testing.
+1. Stop the ColdFusion service (on CommandBox, `box server stop`).
+2. Delete our jar from the instance's `lib\updates` folder:
+   - ColdFusion 2023: `hf202300-00001-casemap-fix.jar`
+   - ColdFusion 2025: `hf202500-00001-casemap-fix.jar`
 
-What you need:
+   The folder is, for example, `C:\ColdFusion2023\cfusion\lib\updates`. Each instance has its own
+   (for example `C:\ColdFusion2023\instance2\lib\updates`). On CommandBox it is
+   `<serverHomeDirectory>\WEB-INF\cfusion\lib\updates`; find `serverHomeDirectory` with
+   `box server info property=serverHomeDirectory`. Leave every other jar in that folder alone.
+3. Start ColdFusion.
+4. To check, copy `app\build-info.cfm` into your web root, open it in a browser and look for
+   `our fix installed: no`. Then delete that file.
 
-- Windows and PowerShell (on Linux, use the manual steps at the end of this section).
-- A Java JDK 11 or newer. The script uses `JAVA_HOME`, or ColdFusion's own `jre` folder if it
-  is a full JDK, or a JDK installed by CommandBox. If it says no JDK was found, install one (for
-  example [Eclipse Temurin 17](https://adoptium.net/)) and set `JAVA_HOME` to it.
-- Internet access, the first time. The script downloads a small Java library
-  ([ASM](https://asm.ow2.io/)) from Maven Central and checks its fingerprint.
-
-### On a normal ColdFusion install
-
-1. Download this repository as a ZIP (green **Code** button > **Download ZIP**) and unzip it, for
-   example to `C:\npe-fix`.
-2. Stop the ColdFusion service.
-3. Open PowerShell **as Administrator** and run (change the path to match your install):
-
-   ```
-   cd C:\npe-fix\acf-startup-npe-repro-main
-   powershell -ExecutionPolicy Bypass -File .\fix\build-fix.ps1 -ServerHome C:\ColdFusion2023\cfusion
-   ```
-
-   The last lines should say `Installed hf202300-00001-casemap-fix.jar into ...`. If you see
-   anything else, nothing was installed and your server is unchanged.
-4. Start the ColdFusion service.
-5. To check it worked, copy `app\build-info.cfm` into your web root, open it in a browser and
-   look for `fix installed: yes`. Then delete that file.
-
-If you run more than one ColdFusion instance, do steps 3 and 4 for each one: use the instance's
-folder (for example `C:\ColdFusion2023\instance2`) as `-ServerHome`.
-
-### On CommandBox
-
-1. Stop the server: `box server stop`
-2. Find its folder: `box server info property=serverHomeDirectory`
-3. Run the script with that folder, as in step 3 above:
-   `powershell -ExecutionPolicy Bypass -File .\fix\build-fix.ps1 -ServerHome <that folder>`
-4. Start the server: `box server start`
-
-If CommandBox reinstalls the engine (for example after `box server forget`, or when servers are
-built fresh from a Docker image), the fix is gone and you need to add it again.
-
-### After every ColdFusion update
-
-Stop ColdFusion, run the script again, start ColdFusion.
-
-This matters. The fix is a copy of one class from the update you have now, and ColdFusion loads
-it ahead of Adobe's own. If a later update changes that class, an old fix would hide Adobe's
-change. Running the script again rebuilds the fix from the new update and replaces the old jar.
-Afterwards, check that `hf...-casemap-fix.jar` is still in `cfusion\lib\updates`.
-
-### To remove it
-
-Stop ColdFusion, delete `hf202300-00001-casemap-fix.jar` (or `hf202500-...`) from
-`cfusion\lib\updates`, start ColdFusion. Do this once Adobe ships its own fix.
-
-### On Linux, or without PowerShell
-
-The same steps by hand, with a JDK 11 or newer and
-[asm-9.7.jar](https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar) and
-[asm-tree-9.7.jar](https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/9.7/asm-tree-9.7.jar)
-in the current folder:
-
-```
-javac -cp asm-9.7.jar:asm-tree-9.7.jar -d build fix/PatchCaseInsensitiveMap.java
-java  -cp asm-9.7.jar:asm-tree-9.7.jar:build PatchCaseInsensitiveMap <source jar> hf202300-00001-casemap-fix.jar
-# stop ColdFusion, copy the jar into <cfusion>/lib/updates, start ColdFusion
-```
-
-`<source jar>` is the jar your server loads the class from: the newest
-`<cfusion>/lib/updates/chf*.jar` if it contains the class, otherwise `<cfusion>/lib/cfusion.jar`.
-To check, run `unzip -l <newest chf jar> coldfusion/util/CaseInsensitiveMap.class`. Today that
-means `cfusion.jar` on 2023 and the `chf2025...jar` on 2025. On 2025, name the output
-`hf202500-00001-casemap-fix.jar`.
-
-### Build and try the fix on the test servers
-
-The repository holds no Adobe code. `fix/build-fix.ps1` reads `CaseInsensitiveMap.class` from
-your installed engine (from the cumulative update jar when it ships its own copy, as 2025 Updates 13
-and 14 do; otherwise from `cfusion.jar`), patches it with [ASM](https://asm.ow2.io/) 9.7 (downloaded
-from Maven Central and hash-checked), checks the two constructors, and drops the one-class jar into
-that server's `lib/updates` folder as `hf202300-00001-casemap-fix.jar` (or `hf202500-...`).
-
-```
-box server start serverConfigFile=server-2023-fixed.json     # installs the engine
-box server stop serverConfigFile=server-2023-fixed.json
-.\fix\build-fix.ps1 -ServerHome .engine\acf2023-fixed
-box server start serverConfigFile=server-2023-fixed.json
-```
-
-Then open <http://127.0.0.1:61231/build-info.cfm> (it should show `CaseInsensitiveMap` loaded from
-the fix jar and `fix installed: yes`) and <http://127.0.0.1:61231/index.cfm> (`PASS`). For 2025
-use `server-2025-fixed.json`, `.engine\acf2025-fixed` and port 61251. To remove the fix, delete
-the jar and restart.
-
-`.\repro.ps1 -Setup` does all of this for the four servers; `.\repro.ps1 -FreshStart` then
-produces the results table above.
+Until Adobe's fix ships, a server without our fix can hit the crash again after a restart. If it
+affects you, ask Adobe support about bug CF-4234842.
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `app/index.cfm` | The reproduction. Options: `threads` (10), `classes` (10), `properties` (12), `mode` (`param`, `write`, `struct`), `trace`. |
-| `app/build-info.cfm` | Which jar each class was loaded from, and what backs component metadata. |
-| `app/speed.cfm` | The rough cost check. |
+| `app/build-info.cfm` | Which jar each class was loaded from, what backs component metadata, and whether our fix is installed. |
+| `app/speed.cfm` | A rough single-threaded speed check, stock vs our fix. |
 | `app/ping.cfm` | Answers `ok` once the server is up (used by `repro.ps1`). |
-| `fix/PatchCaseInsensitiveMap.java` | The patch: the two default constructors, nothing else. Refuses to run if the class is not the expected shape. |
-| `fix/build-fix.ps1` | Builds the fix from a server's own engine jar and installs it. |
+| `fix/PatchCaseInsensitiveMap.java` | Our withdrawn fix: the two default constructors, nothing else. Refuses to run if the class is not the expected shape. |
+| `fix/build-fix.ps1` | Builds the withdrawn fix from a server's own engine jar and installs it. For the test servers only. |
 | `repro.ps1` | Runs the page against the four servers and prints the results table. |
 | `server-2023.json`, `server-2025.json` | Stock servers, ports 61230 and 61250. |
 | `server-2023-fixed.json`, `server-2025-fixed.json` | Servers for the fix, ports 61231 and 61251. |
